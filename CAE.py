@@ -26,14 +26,34 @@ N_EPOCHS = 20
 BATCH_SIZE = 64
 LR = 1e-3
 SCHEDULER_STEP_SIZE = 10
-DATASET = "2shapes"
+DATASET = "MNIST_shapes"
 THRESHOLD = 0.0001
-RESUME = False
+RESUME = True
 RESUME_WITH_CUSTOM_LR = False
-INFER = False
-MODEL_FILE_NAME = "2shapes_take5"
-MODEL_PATH = "./models/2shapes_take5_20240403_154739_5.pt"
+INFER = True
+MODEL_FILE_NAME = "2shapes_take8"
+MODEL_PATH = "./models/MNIST_shapes_20240403_213331_12.pt"
 PLOT = False
+
+
+def init_phase_bias(bias):
+    return nn.init.constant_(bias, val=0)
+
+
+def init_magnitude_bias(fan_in, bias):
+    bound = 1 / math.sqrt(fan_in)
+    torch.nn.init.uniform_(bias, -bound, bound)
+    return bias
+
+
+def get_conv_biases(out_channels, fan_in):
+    magnitude_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+    magnitude_bias = init_magnitude_bias(fan_in, magnitude_bias)
+
+    phase_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+    phase_bias = init_phase_bias(phase_bias)
+    return magnitude_bias, phase_bias
+
 
 class ComplexConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding, h_in, dilation=1):
@@ -48,10 +68,11 @@ class ComplexConv2d(nn.Module):
             bias=False
         )
         self.normalization = nn.BatchNorm2d(num_features=out_channels)
-        h_out = math.floor(((h_in + 2*padding - dilation*(kernel_size-1) - 1)/stride) + 1)
-        d_out = (out_channels, h_out, h_out)
-        self.magnitude_bias = nn.Parameter(torch.randn(d_out))
-        self.phase_bias = nn.Parameter(torch.randn(d_out))
+        self.kernel_size = torch.nn.modules.utils._pair(kernel_size)
+        fan_in = in_channels * self.kernel_size[0] * self.kernel_size[1]
+        self.magnitude_bias, self.phase_bias = get_conv_biases(
+            out_channels, fan_in
+        )
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -71,10 +92,11 @@ class ComplexConvTranspose2d(nn.Module):
             bias=False
         )
         self.normalization = nn.BatchNorm2d(num_features=out_channels)
-        h_out = (h_in - 1)*stride - 2*padding + dilation*(kernel_size - 1) + output_padding + 1
-        d_out = (out_channels, h_out, h_out)
-        self.magnitude_bias = nn.Parameter(torch.randn(d_out))
-        self.phase_bias = nn.Parameter(torch.randn(d_out))
+        self.kernel_size = torch.nn.modules.utils._pair(kernel_size)
+        fan_in = in_channels * self.kernel_size[0] * self.kernel_size[1]
+        self.magnitude_bias, self.phase_bias = get_conv_biases(
+            out_channels, fan_in
+        )
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -84,8 +106,18 @@ class ComplexLinear(nn.Module):
         super().__init__()
         self.layer = nn.Linear(in_features=in_features, out_features=out_features, bias=False)
         self.normalization = nn.BatchNorm1d(num_features=out_features)
-        self.magnitude_bias = nn.Parameter(torch.randn(out_features))
-        self.phase_bias = nn.Parameter(torch.randn(out_features))
+        self.magnitude_bias, self.phase_bias = self._get_biases(
+            in_features, out_features
+        )
+
+    def _get_biases(self, in_channels, out_channels):
+        fan_in = in_channels
+        magnitude_bias = nn.Parameter(torch.empty((1, out_channels)))
+        magnitude_bias = init_magnitude_bias(fan_in, magnitude_bias)
+
+        phase_bias = nn.Parameter(torch.empty((1, out_channels)))
+        phase_bias = init_phase_bias(phase_bias)
+        return magnitude_bias, phase_bias
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -131,37 +163,37 @@ class CAE(nn.Module):
         # 32x32 -> 16x16
         self.conv_1 = ComplexConv2d(in_channels=1, out_channels=16, kernel_size=3, stride=2, padding=1, h_in=32)
         # 16x16 -> 16x16
-        # self.conv_2 = ComplexConv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1, h_in=16)
+        self.conv_2 = ComplexConv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1, h_in=16)
         # 16x16 -> 8x8
-        self.conv_3 = ComplexConv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1, h_in=16)
+        self.conv_3 = ComplexConv2d(in_channels=32, out_channels=32, kernel_size=3, stride=2, padding=1, h_in=16)
         # 8x8 -> 8x8
-        # self.conv_4 = ComplexConv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1, h_in=8)
+        self.conv_4 = ComplexConv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1, h_in=8)
         # 8x8 -> 4x4
-        self.conv_5 = ComplexConv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1, h_in=8)
+        self.conv_5 = ComplexConv2d(in_channels=64, out_channels=64, kernel_size=3, stride=2, padding=1, h_in=8)
         self.encoder = nn.Sequential(
             self.conv_1,
-            # self.conv_2,
+            self.conv_2,
             self.conv_3,
-            # self.conv_4,
+            self.conv_4,
             self.conv_5
         )
         self.enc_linear = ComplexLinear(in_features=64*4*4, out_features=512)
         self.dec_linear = ComplexLinear(in_features=512, out_features=64*4*4)
         # 4x4 -> 8x8
-        self.conv_t_1 = ComplexConvTranspose2d(in_channels=64, out_channels=32, kernel_size=3, stride=2, padding=1, output_padding=1, h_in=4)
+        self.conv_t_1 = ComplexConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, stride=2, padding=1, output_padding=1, h_in=4)
         # 8x8 -> 8x8
-        # self.conv_d_1 = ComplexConv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1, h_in=8)
+        self.conv_d_1 = ComplexConv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1, h_in=8)
         # 8x8 -> 16x16
-        self.conv_t_2 = ComplexConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, padding=1, output_padding=1, h_in=8)
+        self.conv_t_2 = ComplexConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3, stride=2, padding=1, output_padding=1, h_in=8)
         # 16x16 -> 16x16
-        # self.conv_d_2 = ComplexConv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1, h_in=16)
+        self.conv_d_2 = ComplexConv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1, h_in=16)
         # 16x16 -> 32x32
         self.conv_t_3 = ComplexConvTranspose2d(in_channels=16, out_channels=1, kernel_size=3, stride=2, padding=1, output_padding=1, h_in=16)
         self.decoder = nn.Sequential(
             self.conv_t_1,
-            # self.conv_d_1,
+            self.conv_d_1,
             self.conv_t_2,
-            # self.conv_d_2,
+            self.conv_d_2,
             self.conv_t_3
         )
         self.output_layer = OutputLayer()
@@ -288,7 +320,7 @@ def test(data_loader, model, criterion):
     if PLOT: plot(outputs, 1)
 
 
-def eval(data_loader, model, is_MNIST):
+def eval(data_loader, model, is_MNIST, plot:bool = False):
     outputs = []
     model.eval()
     with torch.no_grad():
@@ -302,7 +334,7 @@ def eval(data_loader, model, is_MNIST):
             ari_score = calc_ari_score(batch_size=BATCH_SIZE, labels_true=ground_labels, labels_pred=labels, with_background=False, is_dataset_4Shapes=(DATASET=="4Shapes"))
             print(f'ARI score: {ari_score:.4f}')
 
-    if PLOT: plot_val(outputs)
+    if PLOT or plot: plot_val(outputs)
 
 
 def plot(image_pairs, num_epochs):
@@ -388,9 +420,9 @@ def main():
     if RESUME_WITH_CUSTOM_LR:
         optimizer.param_groups[0]['lr'] = LR
     
+    test_data_loader = torch.utils.data.DataLoader(dataset=dataset_val,batch_size=BATCH_SIZE,shuffle=False,drop_last=True)
     if not INFER:
         train_data_loader = torch.utils.data.DataLoader(dataset=dataset_train,batch_size=BATCH_SIZE,shuffle=True,drop_last=True)
-        test_data_loader = torch.utils.data.DataLoader(dataset=dataset_val,batch_size=BATCH_SIZE,shuffle=False,drop_last=True)
         train(
             train_data_loader=train_data_loader, 
             test_data_loader=test_data_loader, 
@@ -402,7 +434,7 @@ def main():
             is_MNIST=is_MNIST
         )
     
-    eval(data_loader=test_data_loader, model=model, is_MNIST=is_MNIST)
+    eval(data_loader=test_data_loader, model=model, is_MNIST=is_MNIST, plot=True)
 
 
 if __name__ == "__main__":
