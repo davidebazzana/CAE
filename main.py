@@ -21,7 +21,7 @@ LR = 1e-3
 
 def main():
     try:
-        opts, args = getopt(sys.argv[1:], "", ["task=", "model=", "dataset=", "epochs="])
+        opts, args = getopt(sys.argv[1:], "", ["task=", "model=", "dataset=", "epochs=", "ari="])
     except GetoptError:
         print("Wrong arguments")
 
@@ -50,6 +50,7 @@ def main():
         case _:
             raise RuntimeError(f'No valid dataset matching the name "{dataset}"')
     test_data_loader = torch.utils.data.DataLoader(dataset=dataset_val,batch_size=BATCH_SIZE,shuffle=False,drop_last=True)
+        
 
     match opts["--task"]:
         case "train":
@@ -66,9 +67,17 @@ def main():
                 num_epochs=epochs,
                 number_of_objects=n_objects,
                 model_file_name=dataset,
+                with_ari_bg=False,
             )
         case "evaluate":
             model_path = opts["--model"]
+            ari = opts["--ari"]
+            if ari == "+bg":
+                with_ari_bg = True
+            elif ari == "-bg":
+                with_ari_bg = False
+            else:
+                raise RuntimeError('Wrong value for option "--ari": either "+bg" or "-bg"')
 
             checkpoint = torch.load(model_path)
             model.load_state_dict(checkpoint['model_state_dict'])
@@ -76,7 +85,7 @@ def main():
             criterion = checkpoint['loss']
             epoch = checkpoint['epoch'] + 1
             
-            eval(data_loader=test_data_loader, model=model, number_of_objects=n_objects, plot=True)
+            eval(data_loader=test_data_loader, model=model, number_of_objects=n_objects, plot=True, with_background=with_ari_bg)
 
 
 if __name__ == "__main__":

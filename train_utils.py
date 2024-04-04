@@ -6,7 +6,7 @@ from plot_utils import plot_pair
 from eval_utils import calc_ari_score
 from eval_utils import object_discovery
 
-def train(train_data_loader, test_data_loader, model, criterion, optimizer, start_epoch, num_epochs, number_of_objects, model_file_name):
+def train(train_data_loader, test_data_loader, model, criterion, optimizer, start_epoch, num_epochs, number_of_objects, model_file_name, with_ari_bg):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     outputs = []
 
@@ -42,7 +42,7 @@ def train(train_data_loader, test_data_loader, model, criterion, optimizer, star
 
         test(test_data_loader, model, criterion)
 
-        eval(test_data_loader, model, number_of_objects)
+        eval(test_data_loader, model, number_of_objects, with_background=with_ari_bg)
         
     model_path = './models/{}_{}_{}.pt'.format(model_file_name, timestamp, epoch+1)
     torch.save({
@@ -73,7 +73,7 @@ def test(data_loader, model, criterion):
         print(f'Validation loss: {loss_cumulative_avg:.4f}')
 
 
-def eval(data_loader, model, number_of_objects, plot:bool = False):
+def eval(data_loader, model, number_of_objects, plot:bool = False, with_background=False):
     outputs = []
     model.eval()
     with torch.no_grad():
@@ -83,7 +83,7 @@ def eval(data_loader, model, number_of_objects, plot:bool = False):
             labels = object_discovery(model, output, number_of_objects)
             break
         outputs.append((recon, labels))
-        ari_score = calc_ari_score(labels_true=ground_labels, labels_pred=labels, with_background=False)
+        ari_score = calc_ari_score(labels_true=ground_labels, labels_pred=labels, with_background=with_background)
         print(f'ARI score: {ari_score:.4f}')
 
     if plot: plot_pair(outputs)
