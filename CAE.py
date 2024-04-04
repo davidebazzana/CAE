@@ -22,37 +22,22 @@ Datasets available:
 "MNIST_shapes"
 """
 
-N_EPOCHS = 20
+N_EPOCHS = 5
 BATCH_SIZE = 64
 LR = 1e-3
 SCHEDULER_STEP_SIZE = 10
-DATASET = "MNIST_shapes"
+DATASET = "2shapes"
 THRESHOLD = 0.0001
-RESUME = True
+RESUME = False
 RESUME_WITH_CUSTOM_LR = False
-INFER = True
-MODEL_FILE_NAME = "2shapes_take8"
+INFER = False
+MODEL_FILE_NAME = "2shapes_take2"
 MODEL_PATH = "./models/MNIST_shapes_20240403_213331_12.pt"
 PLOT = False
 
 
-def init_phase_bias(bias):
-    return nn.init.constant_(bias, val=0)
-
-
-def init_magnitude_bias(fan_in, bias):
-    bound = 1 / math.sqrt(fan_in)
-    torch.nn.init.uniform_(bias, -bound, bound)
-    return bias
-
-
-def get_conv_biases(out_channels, fan_in):
-    magnitude_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
-    magnitude_bias = init_magnitude_bias(fan_in, magnitude_bias)
-
-    phase_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
-    phase_bias = init_phase_bias(phase_bias)
-    return magnitude_bias, phase_bias
+def get_init_bound(fan_in: int):
+    return 1 / math.sqrt(fan_in)
 
 
 class ComplexConv2d(nn.Module):
@@ -68,11 +53,15 @@ class ComplexConv2d(nn.Module):
             bias=False
         )
         self.normalization = nn.BatchNorm2d(num_features=out_channels)
+        
         self.kernel_size = torch.nn.modules.utils._pair(kernel_size)
         fan_in = in_channels * self.kernel_size[0] * self.kernel_size[1]
-        self.magnitude_bias, self.phase_bias = get_conv_biases(
-            out_channels, fan_in
-        )
+        
+        self.magnitude_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+        nn.init.uniform_(self.magnitude_bias, -get_init_bound(fan_in), get_init_bound(fan_in))
+
+        self.phase_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+        nn.init.constant_(self.phase_bias, val=0)
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -92,11 +81,15 @@ class ComplexConvTranspose2d(nn.Module):
             bias=False
         )
         self.normalization = nn.BatchNorm2d(num_features=out_channels)
+        
         self.kernel_size = torch.nn.modules.utils._pair(kernel_size)
         fan_in = in_channels * self.kernel_size[0] * self.kernel_size[1]
-        self.magnitude_bias, self.phase_bias = get_conv_biases(
-            out_channels, fan_in
-        )
+        
+        self.magnitude_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+        nn.init.uniform_(self.magnitude_bias, -get_init_bound(fan_in), get_init_bound(fan_in))
+
+        self.phase_bias = nn.Parameter(torch.empty((1, out_channels, 1, 1)))
+        nn.init.constant_(self.phase_bias, val=0)
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -106,18 +99,14 @@ class ComplexLinear(nn.Module):
         super().__init__()
         self.layer = nn.Linear(in_features=in_features, out_features=out_features, bias=False)
         self.normalization = nn.BatchNorm1d(num_features=out_features)
-        self.magnitude_bias, self.phase_bias = self._get_biases(
-            in_features, out_features
-        )
+        
+        fan_in = in_features
+        
+        self.magnitude_bias = nn.Parameter(torch.empty((1, out_features)))
+        nn.init.uniform_(self.magnitude_bias, -get_init_bound(fan_in), get_init_bound(fan_in))
 
-    def _get_biases(self, in_channels, out_channels):
-        fan_in = in_channels
-        magnitude_bias = nn.Parameter(torch.empty((1, out_channels)))
-        magnitude_bias = init_magnitude_bias(fan_in, magnitude_bias)
-
-        phase_bias = nn.Parameter(torch.empty((1, out_channels)))
-        phase_bias = init_phase_bias(phase_bias)
-        return magnitude_bias, phase_bias
+        self.phase_bias = nn.Parameter(torch.empty((1, out_features)))
+        nn.init.constant_(self.phase_bias, val=0)
 
     def forward(self, x: torch.Tensor):
         return apply_layer(z=x, module=self, normalization=self.normalization)
@@ -133,7 +122,6 @@ class OutputLayer(nn.Module):
 
 
 def stable_angle(x: torch.tensor, eps=1e-8):
-    """ Function to ensure that the gradients of .angle() are well behaved."""
     imag = x.imag
     y = x.clone()
     y.imag[(imag < eps) & (imag > -1.0 * eps)] = eps
