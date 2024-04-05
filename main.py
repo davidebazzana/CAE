@@ -32,8 +32,6 @@ def main():
         if o == "--cpu":
             cpu = True
 
-    print(cpu)
-
     model = CAE()
     if not cpu:
         model = model.cuda()
