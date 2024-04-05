@@ -7,6 +7,8 @@ This repository contains an implementation of the concepts described in the pape
 ### Installation
 Run the executable `setup.sh` in order to install the conda environment, `pytorch`, `cudatoolkit` and `einops`. The script also installs the datasets (*2shapes*, *3shapes* and *MNIST_shapes*).
 
+If your system does not support `cuda`, provide the argument `--cpu` when running the commands described below.
+
 ### Training
 To train the network run the following command:
 ```
