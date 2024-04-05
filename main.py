@@ -21,15 +21,24 @@ LR = 1e-3
 
 def main():
     try:
-        opts, args = getopt(sys.argv[1:], "", ["task=", "model=", "dataset=", "epochs=", "ari="])
+        opts, args = getopt(sys.argv[1:], "", ["task=", "model=", "dataset=", "epochs=", "ari=", "cpu"])
     except GetoptError:
         print("Wrong arguments")
 
+    epoch = 0
+    cpu = False
+
+    for o, a in opts:
+        if o == "--cpu":
+            cpu = True
+
+    print(cpu)
+
     model = CAE()
-    model = model.cuda()
+    if not cpu:
+        model = model.cuda()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    epoch = 0
 
     opts = dict(opts)
 
@@ -68,6 +77,7 @@ def main():
                 number_of_objects=n_objects,
                 model_file_name=dataset,
                 with_ari_bg=False,
+                cpu=cpu
             )
         case "evaluate":
             model_path = opts["--model"]
@@ -85,7 +95,7 @@ def main():
             criterion = checkpoint['loss']
             epoch = checkpoint['epoch'] + 1
             
-            eval(data_loader=test_data_loader, model=model, number_of_objects=n_objects, plot=True, with_background=with_ari_bg)
+            eval(data_loader=test_data_loader, model=model, number_of_objects=n_objects, plot=True, with_background=with_ari_bg, cpu=cpu)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from plot_utils import plot_pair
 from eval_utils import calc_ari_score
 from eval_utils import object_discovery
 
-def train(train_data_loader, test_data_loader, model, criterion, optimizer, start_epoch, num_epochs, number_of_objects, model_file_name, with_ari_bg):
+def train(train_data_loader, test_data_loader, model, criterion, optimizer, start_epoch, num_epochs, number_of_objects, model_file_name, with_ari_bg, cpu: bool = False):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     outputs = []
 
@@ -19,7 +19,8 @@ def train(train_data_loader, test_data_loader, model, criterion, optimizer, star
         loss_cumulative_avg = 0
         for (img, _) in train_data_loader:
             # with autograd.detect_anomaly():
-            img = img.cuda(non_blocking=True)
+            if not cpu:
+                img = img.cuda(non_blocking=True)
             recon = model(img)
             loss = criterion(recon, img)
 
@@ -40,9 +41,9 @@ def train(train_data_loader, test_data_loader, model, criterion, optimizer, star
         print(f'Loss: {loss_cumulative_avg:.4f}')
         outputs.append((epoch, img, recon))
 
-        test(test_data_loader, model, criterion)
+        test(test_data_loader, model, criterion, cpu=cpu)
 
-        eval(test_data_loader, model, number_of_objects, with_background=with_ari_bg)
+        eval(test_data_loader, model, number_of_objects, with_background=with_ari_bg, cpu=cpu)
         
     model_path = './models/{}_{}_{}.pt'.format(model_file_name, timestamp, epoch+1)
     torch.save({
@@ -53,14 +54,15 @@ def train(train_data_loader, test_data_loader, model, criterion, optimizer, star
     }, model_path)
 
 
-def test(data_loader, model, criterion):
+def test(data_loader, model, criterion, cpu: bool = False):
     outputs = []
     model.eval()
     with torch.no_grad():
         n = 0
         loss_cumulative_avg = 0
         for (img, ground_labels) in data_loader:
-            img = img.cuda(non_blocking=True)
+            if not cpu:
+                img = img.cuda(non_blocking=True)
             recon, output = model(img)
             loss = criterion(recon, img)
 
@@ -73,12 +75,13 @@ def test(data_loader, model, criterion):
         print(f'Validation loss: {loss_cumulative_avg:.4f}')
 
 
-def eval(data_loader, model, number_of_objects, plot:bool = False, with_background=False):
+def eval(data_loader, model, number_of_objects, plot:bool = False, with_background=False, cpu: bool = False):
     outputs = []
     model.eval()
     with torch.no_grad():
         for (img, ground_labels) in data_loader:
-            img = img.cuda(non_blocking=True)
+            if not cpu:
+                img = img.cuda(non_blocking=True)
             recon, output = model(img)
             labels = object_discovery(model, output, number_of_objects)
             break
