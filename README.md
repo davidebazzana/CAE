@@ -23,8 +23,10 @@ To evaluate the predictions of a network using the ARI score, run the following:
 ```
 python .\main.py --task=evaluate --dataset=2shapes --model=./models/2shapes_99.pt --ari=-bg
 ```
-This command also plots the reconstruction (1st row) and labeling prediction (2nd row) returned by the network:
-![2shapes](https://github.com/davidebazzana/CAE/assets/61621063/e615e9f2-bfad-46ea-8abb-796ac2d7d5ae)
+This command also plots a batch of 9 input images along with the corresponding reconstructions and labeling predictions returned by the network:
+
+![2_shapes_99](https://github.com/davidebazzana/CAE/assets/61621063/0610c67b-d173-4532-9b16-31839fa0efc9)
+
 
 The argument `--ari` can either be `+bg` or `-bg`. `-bg` excludes the background labels from the evaluation of the ARI score while `+bg` includes them.
 
