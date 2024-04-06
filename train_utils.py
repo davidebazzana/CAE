@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from plot_utils import plot_pair
+from plot_utils import plot_in_out_labels
 from eval_utils import calc_ari_score
 from eval_utils import object_discovery
 
@@ -85,8 +86,8 @@ def eval(data_loader, model, number_of_objects, plot:bool = False, with_backgrou
             recon, output = model(img)
             labels = object_discovery(model, output, number_of_objects)
             break
-        outputs.append((recon, labels))
+        outputs.append((img.cpu().detach().numpy(), recon.cpu().detach().numpy(), labels))
         ari_score = calc_ari_score(labels_true=ground_labels, labels_pred=labels, with_background=with_background)
         print(f'ARI score: {ari_score:.4f}')
 
-    if plot: plot_pair(outputs)
+    if plot: plot_in_out_labels(outputs)
